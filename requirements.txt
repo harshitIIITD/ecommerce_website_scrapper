@@ -4,7 +4,6 @@ requests
 xlsxwriter
 uuid
 bs4
-pickle
-sqlite3
-uuid
+beautifulsoup4
 fake_useragent
+openpyxl
