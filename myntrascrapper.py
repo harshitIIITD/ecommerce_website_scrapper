@@ -24,6 +24,7 @@ class MyntraScraper:
             "Cache-Control": "max-age=0"
         }
         
+        
         # Visit the homepage first to get cookies
         self.session.get("https://www.myntra.com/")
     
