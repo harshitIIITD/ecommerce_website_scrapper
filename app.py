@@ -17,7 +17,9 @@ import uuid
 # Add these imports for user state management
 import sqlite3
 import json
-from datetime import datetime, timedelta
+import datetime
+from datetime import timedelta
+from datetime import datetime, timedelta, time
 
 # Constants for supported platforms (unchanged)
 PLATFORMS = {
@@ -315,6 +317,7 @@ def add_scheduled_scraping():
     )
     
     if frequency != "Once":
+        # Fix: Use datetime.time directly rather than datetime.datetime.time
         time_of_day = st.time_input("Time of day to run", value=datetime.time(0, 0))
         
         if frequency == "Weekly":
