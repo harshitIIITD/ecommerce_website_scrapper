@@ -19,7 +19,7 @@ import sqlite3
 import json
 import datetime
 from datetime import timedelta
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
 
 # Constants for supported platforms (unchanged)
 PLATFORMS = {
