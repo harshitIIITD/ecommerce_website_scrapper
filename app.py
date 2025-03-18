@@ -389,7 +389,7 @@ def create_enhanced_csv_export(results_df):
         if export_df[col].dtype == 'object':
             # Convert lists to pipe-separated strings
             export_df[col] = export_df[col].apply(
-                lambda x: "|".join(x) if isinstance(x, list) else x
+                lambda x: "|".join(str(item) for item in x) if isinstance(x, list) else x
             )
     
     # Add timestamp
