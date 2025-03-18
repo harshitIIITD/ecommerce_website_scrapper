@@ -285,17 +285,29 @@ def get_scraper(platform):
         if platform == "myntra":
             from myntrascrapper import MyntraScraper
             scraper = MyntraScraper()
-            # Cloud-specific settings for Myntra
-            if is_cloud:
-                scraper.session.headers.update({
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-                    'Accept': 'application/json, text/plain, */*',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Referer': 'https://www.myntra.com/'
-                })
+            
+            # Always update Myntra headers for better reliability
+            scraper.session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://www.myntra.com/',
+                'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"'
+            })
+            
+            # Ensure we have cookies by visiting the homepage
+            try:
+                scraper.session.get("https://www.myntra.com/")
+            except:
+                pass
+                
             return scraper
             
+        # Rest of the function remains the same
         elif platform == "flipkart":
+            # Your existing code for Flipkart
             from flipkartscrapper import FlipkartScraper
             scraper = FlipkartScraper()
             # Cloud-specific settings for Flipkart
@@ -306,6 +318,7 @@ def get_scraper(platform):
                 })
             return scraper
             
+        # Unchanged code for other platforms
         elif platform == "amazon":
             from amazonscrapper import AmazonScraper
             # For Amazon, we need to be more careful in cloud environments
@@ -331,6 +344,7 @@ def get_scraper(platform):
         st.error(f"Error initializing scraper: {str(e)}")
         return None
 
+
 # Add this after your imports
 def safe_scrape(scraper, product_id, platform):
     """Safe scraping wrapper with better error handling"""
@@ -346,10 +360,23 @@ def safe_scrape(scraper, product_id, platform):
                 
                 # Try with a different user agent
                 scraper.session.headers.update({
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                    'Accept': 'application/json, text/javascript, */*; q=0.01',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': 'https://www.myntra.com/',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Connection': 'keep-alive',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 })
+                
+                # Add cookies if missing (which might help with Myntra)
+                if platform == "myntra" and not scraper.session.cookies:
+                    # Visit homepage first to get cookies
+                    try:
+                        scraper.session.get('https://www.myntra.com/')
+                    except:
+                        pass
                 
                 # Retry with new headers
                 data = scraper.get_product_details(str(product_id))
@@ -358,6 +385,16 @@ def safe_scrape(scraper, product_id, platform):
                 scraper.session.headers = original_headers
         
         if data:
+            # For Myntra specifically, check if the data is valid JSON
+            if platform == "myntra" and isinstance(data, str):
+                # Try to parse the string as JSON
+                try:
+                    import json
+                    data = json.loads(data)
+                except:
+                    # If parsing fails, it's not valid JSON
+                    return None
+            
             # Extract product information
             product_info = scraper.extract_product_info(data)
             
@@ -370,24 +407,116 @@ def safe_scrape(scraper, product_id, platform):
         
         return None
     except Exception as e:
-        st.warning(f"Error while scraping: {str(e)}")
+        st.warning(f"Error while scraping {platform} product {product_id}: {str(e)}")
+        
+        # If it's a JSON decode error for Myntra, try a different method
+        if platform == "myntra" and "Expecting value" in str(e):
+            try:
+                # Try using requests directly with a fresh session
+                import requests
+                import json
+                import random
+                import time
+                
+                session = requests.Session()
+                session.headers = {
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                    "Accept": "application/json",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Referer": "https://www.myntra.com/",
+                    "sec-ch-ua": '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+                    "sec-ch-ua-mobile": "?0",
+                    "sec-ch-ua-platform": '"macOS"'
+                }
+                
+                # First, visit homepage to get cookies
+                session.get("https://www.myntra.com/")
+                
+                # Add delay to mimic human behavior
+                time.sleep(1 + random.random())
+                
+                # Then try to get product
+                api_url = f"https://www.myntra.com/gateway/v2/product/{product_id}"
+                response = session.get(api_url)
+                
+                if response.status_code == 200:
+                    try:
+                        data = response.json()
+                        # Try to use the regular extract function
+                        product_info = scraper.extract_product_info(data)
+                        if not product_info:
+                            product_info = fallback_myntra_extract(data)
+                        return product_info
+                    except:
+                        pass
+            except Exception as inner_e:
+                st.warning(f"Alternative scraping method also failed: {str(inner_e)}")
+        
         return None
 
 def fallback_myntra_extract(data):
     """Fallback extraction for Myntra when normal extraction fails"""
     try:
-        if not data or 'style' not in data:
+        # Check if data has the expected format
+        if not data:
             return None
             
-        style = data['style']
-        return {
-            "product_id": style.get('id'),
-            "name": style.get('name'),
-            "brand": style.get('brand', {}).get('name', 'Unknown'),
-            "images": [],  # Simple fallback doesn't extract images
-            "is_fallback": True  # Mark as fallback extraction
-        }
-    except:
+        # Try to access with standard structure first
+        if 'style' in data:
+            style = data['style']
+            basic_info = {
+                "product_id": style.get('id'),
+                "name": style.get('name'),
+                "brand": style.get('brand', {}).get('name', 'Unknown'),
+                "is_fallback": True  # Mark as fallback extraction
+            }
+            
+            # Try to extract price info
+            if 'price' in style:
+                basic_info["mrp"] = style.get('price', {}).get('mrp')
+                basic_info["price"] = style.get('price', {}).get('discounted')
+                basic_info["discount"] = style.get('price', {}).get('discount')
+            
+            # Try to extract images
+            images = []
+            if 'media' in style:
+                media = style.get('media', {})
+                if 'albums' in media:
+                    for album in media.get('albums', []):
+                        for image in album.get('images', []):
+                            if 'secureSrc' in image:
+                                img_url = image['secureSrc']
+                                # Replace placeholders with actual values if needed
+                                img_url = img_url.replace('($height)', '1080').replace('($qualityPercentage)', '90').replace('($width)', '720')
+                                images.append(img_url)
+            
+            basic_info["images"] = images
+            return basic_info
+        
+        # Alternative format check
+        if 'data' in data and 'style' in data['data']:
+            style = data['data']['style']
+            return {
+                "product_id": style.get('id'),
+                "name": style.get('name', 'Unknown Product'),
+                "brand": style.get('brand', {}).get('name', 'Unknown'),
+                "is_fallback": True
+            }
+            
+        # Last resort: just return whatever product ID we can find
+        if 'data' in data and isinstance(data['data'], dict):
+            for key, value in data['data'].items():
+                if isinstance(value, dict) and 'id' in value:
+                    return {
+                        "product_id": value.get('id'),
+                        "name": value.get('name', 'Unknown Product'),
+                        "is_fallback": True,
+                        "partial_data": True
+                    }
+                    
+        return None
+    except Exception as e:
+        print(f"Error in fallback extraction: {e}")
         return None
 
 # Other existing functions (unchanged)
@@ -821,6 +950,8 @@ def main():
                             
                             # Save to cache if successful
                             if product_info:
+                                # Add to results
+                                all_results.append(product_info)
                                 save_to_cache(selected_platform, str(product_id), product_info)
                             else:
                                 # Add diagnostic info to the failure record
@@ -830,6 +961,9 @@ def main():
                                     "platform": selected_platform
                                 }
                                 failed_ids.append(error_info)
+                        else:
+                            # Add cached data to results
+                            all_results.append(product_info)
                     
                     except Exception as e:
                         failed_ids.append({"product_id": product_id, "reason": str(e)})
