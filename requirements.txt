@@ -1,9 +1,10 @@
 streamlit
 pandas
 requests
+beautifulsoup4
+lxml
+fake-useragent
 xlsxwriter
 uuid
 bs4
-beautifulsoup4
-fake_useragent
 openpyxl

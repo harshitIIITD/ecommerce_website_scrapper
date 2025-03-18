@@ -277,23 +277,117 @@ def clear_cache():
     return total, expired
 
 def get_scraper(platform):
-    """Get appropriate scraper based on platform selection"""
-    if platform == "myntra":
-        return MyntraScraper()
-    elif platform == "flipkart":
-        from flipkartscrapper import FlipkartScraper
-        return FlipkartScraper()
-    elif platform == "amazon":
-        from amazonscrapper import AmazonScraper
-        return AmazonScraper()
-    elif platform == "tatacliq":
-        from tatacliqscrapper import TataCliqScraper
-        return TataCliqScraper()
-    elif platform == "ajio":
-        from ajioscrapper import AjioScraper
-        return AjioScraper()
-    else:
-        st.error(f"Scraper for {platform} is not yet implemented")
+    """Get appropriate scraper based on platform selection with cloud environment adaptations"""
+    try:
+        # Set cloud environment flag
+        is_cloud = os.environ.get('IS_STREAMLIT_CLOUD', False)
+        
+        if platform == "myntra":
+            from myntrascrapper import MyntraScraper
+            scraper = MyntraScraper()
+            # Cloud-specific settings for Myntra
+            if is_cloud:
+                scraper.session.headers.update({
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+                    'Accept': 'application/json, text/plain, */*',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': 'https://www.myntra.com/'
+                })
+            return scraper
+            
+        elif platform == "flipkart":
+            from flipkartscrapper import FlipkartScraper
+            scraper = FlipkartScraper()
+            # Cloud-specific settings for Flipkart
+            if is_cloud:
+                scraper.session.headers.update({
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+                    'Accept-Language': 'en-US,en;q=0.9'
+                })
+            return scraper
+            
+        elif platform == "amazon":
+            from amazonscrapper import AmazonScraper
+            # For Amazon, we need to be more careful in cloud environments
+            if is_cloud:
+                # Use safer settings for cloud deployment
+                return AmazonScraper(region="in", use_proxies=False)
+            else:
+                return AmazonScraper(region="in")
+                
+        elif platform == "tatacliq":
+            from tatacliqscrapper import TataCliqScraper
+            return TataCliqScraper()
+            
+        elif platform == "ajio":
+            from ajioscrapper import AjioScraper
+            return AjioScraper()
+            
+        else:
+            st.error(f"Scraper for {platform} is not yet implemented")
+            return None
+            
+    except Exception as e:
+        st.error(f"Error initializing scraper: {str(e)}")
+        return None
+
+# Add this after your imports
+def safe_scrape(scraper, product_id, platform):
+    """Safe scraping wrapper with better error handling"""
+    try:
+        # First, try with standard approach
+        data = scraper.get_product_details(str(product_id))
+        
+        if not data:
+            # If no data returned, try with different user agent
+            if hasattr(scraper, 'session'):
+                # Save original headers
+                original_headers = scraper.session.headers.copy()
+                
+                # Try with a different user agent
+                scraper.session.headers.update({
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5'
+                })
+                
+                # Retry with new headers
+                data = scraper.get_product_details(str(product_id))
+                
+                # Restore original headers
+                scraper.session.headers = original_headers
+        
+        if data:
+            # Extract product information
+            product_info = scraper.extract_product_info(data)
+            
+            # If extraction failed but we have data, try fallback extraction
+            if not product_info and platform == "myntra":
+                # Try to extract with a simpler approach for Myntra
+                product_info = fallback_myntra_extract(data)
+            
+            return product_info
+        
+        return None
+    except Exception as e:
+        st.warning(f"Error while scraping: {str(e)}")
+        return None
+
+def fallback_myntra_extract(data):
+    """Fallback extraction for Myntra when normal extraction fails"""
+    try:
+        if not data or 'style' not in data:
+            return None
+            
+        style = data['style']
+        return {
+            "product_id": style.get('id'),
+            "name": style.get('name'),
+            "brand": style.get('brand', {}).get('name', 'Unknown'),
+            "images": [],  # Simple fallback doesn't extract images
+            "is_fallback": True  # Mark as fallback extraction
+        }
+    except:
         return None
 
 # Other existing functions (unchanged)
@@ -722,21 +816,20 @@ def main():
                         
                         # If not in cache or cache disabled, scrape from website
                         if not product_info:
-                            # Get product details
-                            data = scraper.get_product_details(str(product_id))
+                            # Use safe scraping with fallbacks
+                            product_info = safe_scrape(scraper, str(product_id), selected_platform)
                             
-                            if data:
-                                # Extract product information
-                                product_info = scraper.extract_product_info(data)
-                                
-                                # Save to cache if successful
-                                if product_info:
-                                    save_to_cache(selected_platform, str(product_id), product_info)
-                            
-                        if product_info:
-                            all_results.append(product_info)
-                        else:
-                            failed_ids.append({"product_id": product_id, "reason": "Failed to extract information"})
+                            # Save to cache if successful
+                            if product_info:
+                                save_to_cache(selected_platform, str(product_id), product_info)
+                            else:
+                                # Add diagnostic info to the failure record
+                                error_info = {
+                                    "product_id": product_id, 
+                                    "reason": "Failed to extract information",
+                                    "platform": selected_platform
+                                }
+                                failed_ids.append(error_info)
                     
                     except Exception as e:
                         failed_ids.append({"product_id": product_id, "reason": str(e)})
