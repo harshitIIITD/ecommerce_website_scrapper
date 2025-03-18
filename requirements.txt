@@ -4,7 +4,6 @@ requests
 xlsxwriter
 uuid
 bs4
-openpyxl
 pickle
 sqlite3
 uuid
