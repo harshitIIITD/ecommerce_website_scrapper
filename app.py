@@ -45,12 +45,25 @@ if not CACHE_DIR.exists():
     
 if not USER_STATE_DIR.exists():
     USER_STATE_DIR.mkdir()
+# Add after the imports section
+def adapt_datetime(dt):
+    """Convert datetime to ISO format for SQLite storage."""
+    return dt.isoformat()
+
+def convert_datetime(s):
+    """Convert ISO format string from SQLite back to datetime."""
+    return datetime.fromisoformat(s)
 
 # Initialize the user state database
 def init_user_state_db():
     """Initialize the user state database if it doesn't exist."""
-    conn = sqlite3.connect(str(USER_STATE_DB))
+    # Register datetime adapters for SQLite
+    sqlite3.register_adapter(datetime, adapt_datetime)
+    sqlite3.register_converter("timestamp", convert_datetime)
+    
+    conn = sqlite3.connect(str(USER_STATE_DB), detect_types=sqlite3.PARSE_DECLTYPES)
     cursor = conn.cursor()
+    
     
     # Create user state table if it doesn't exist
     cursor.execute('''
@@ -100,7 +113,7 @@ def save_user_state(state_data):
     """Save user state to the database."""
     user_id = get_user_id()
     
-    conn = sqlite3.connect(str(USER_STATE_DB))
+    conn = sqlite3.connect(str(USER_STATE_DB), detect_types=sqlite3.PARSE_DECLTYPES)
     cursor = conn.cursor()
     
     # Convert the state data to JSON string
