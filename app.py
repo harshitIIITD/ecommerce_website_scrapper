@@ -317,8 +317,9 @@ def add_scheduled_scraping():
     )
     
     if frequency != "Once":
-        # Fix: Use datetime.time directly rather than datetime.datetime.time
-        time_of_day = st.time_input("Time of day to run", value=datetime.time(0, 0))
+        # Use the time class correctly from datetime module
+        from datetime import time as dt_time
+        time_of_day = st.time_input("Time of day to run", value=dt_time(0, 0))
         
         if frequency == "Weekly":
             day_of_week = st.selectbox("Day of week", 
