@@ -371,6 +371,34 @@ def add_advanced_export_options(results_df):
         sheets_url = st.text_input("Google Sheets URL (must be publicly editable)")
         api_key = st.text_input("Google API Key", type="password")
 
+def create_enhanced_csv_export(results_df):
+    """
+    Creates an enhanced CSV export with all product details including images, brand, price, etc.
+    
+    Args:
+        results_df (pd.DataFrame): DataFrame containing the scraped product information
+        
+    Returns:
+        str: CSV string with all product information
+    """
+    # Make a copy of the DataFrame to avoid modifying the original
+    export_df = results_df.copy()
+    
+    # Handle list columns by joining them with pipe separators
+    for col in export_df.columns:
+        if export_df[col].dtype == 'object':
+            # Convert lists to pipe-separated strings
+            export_df[col] = export_df[col].apply(
+                lambda x: "|".join(x) if isinstance(x, list) else x
+            )
+    
+    # Add timestamp
+    export_df['export_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Create CSV string
+    csv_str = export_df.to_csv(index=False)
+    return csv_str
+
 def main():
     # Set page config
     st.set_page_config(
@@ -739,14 +767,20 @@ def main():
                     results_df = pd.DataFrame(all_results)
                     
                     # Display download links
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
                     with col1:
                         st.markdown(download_link(json_str, f"{selected_platform}_products.json", "📥 Download JSON"), unsafe_allow_html=True)
                     
                     with col2:
-                        # If there are results, also offer CSV download
+                        # Basic CSV download
                         csv = results_df.to_csv(index=False)
                         st.markdown(download_link(csv, f"{selected_platform}_products.csv", "📥 Download CSV"), unsafe_allow_html=True)
+                    
+                    with col3:
+                        # Enhanced CSV with all details
+                        enhanced_csv = create_enhanced_csv_export(results_df)
+                        st.markdown(download_link(enhanced_csv, f"{selected_platform}_products_detailed.csv", "📥 Download Detailed CSV"), 
+                                    unsafe_allow_html=True)
                     
                     # Show sample of data
                     with st.expander("Preview Sample of Scraped Data"):
@@ -779,6 +813,55 @@ def main():
                 # Call advanced export options
                 if all_results:
                     add_advanced_export_options(results_df)
+                    enhanced_csv = create_enhanced_csv_export(results_df)
+                    st.markdown(download_link(enhanced_csv, f"{selected_platform}_enhanced_products.csv", "📥 Download Enhanced CSV"), unsafe_allow_html=True)
+                    
+                    # Add export format options
+                    export_format_container = st.expander("Export Options")
+                    with export_format_container:
+                        st.write("Configure your export format:")
+                        
+                        # Select which columns to include
+                        if not results_df.empty:
+                            available_columns = results_df.columns.tolist()
+                            selected_columns = st.multiselect(
+                                "Select columns to include (leave empty for all columns):",
+                                available_columns,
+                                default=[]
+                            )
+                            
+                            # Image options
+                            include_images = st.checkbox("Include image URLs", value=True)
+                            max_images = st.slider("Maximum number of images per product", 1, 10, 3) if include_images else 1
+                            
+                            # Create custom export button
+                            if st.button("Generate Custom Export"):
+                                # Create custom DataFrame
+                                custom_df = results_df.copy()
+                                
+                                # Filter columns if specified
+                                if selected_columns:
+                                    custom_df = custom_df[selected_columns]
+                                    
+                                # Handle image columns
+                                if 'images' in custom_df.columns and include_images:
+                                    # Keep only specified number of images
+                                    custom_df['images'] = custom_df['images'].apply(
+                                        lambda x: x[:max_images] if isinstance(x, list) else x
+                                    )
+                                    
+                                    # Add individual image columns
+                                    for i in range(max_images):
+                                        custom_df[f'image_url_{i+1}'] = custom_df['images'].apply(
+                                            lambda x: x[i] if isinstance(x, list) and len(x) > i else None
+                                        )
+                                
+                                # Create CSV string
+                                custom_csv = custom_df.to_csv(index=False)
+                                
+                                # Display download link
+                                st.markdown(download_link(custom_csv, f"{selected_platform}_products_custom.csv", 
+                                                        "📥 Download Custom CSV"), unsafe_allow_html=True)
         
         except Exception as e:
             st.error(f"Error processing the file: {str(e)}")
