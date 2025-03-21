@@ -4,5 +4,4 @@ requests
 beautifulsoup4
 xlsxwriter
 python-dateutil
-uuid
-pickle5
+
