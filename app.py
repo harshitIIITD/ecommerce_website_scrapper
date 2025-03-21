@@ -349,7 +349,15 @@ def get_scraper(platform):
 def safe_scrape(scraper, product_id, platform):
     """Safe scraping wrapper with better error handling"""
     try:
-        # First, try with standard approach
+        # For cloud environment, always use the alternative method for Myntra
+        is_cloud = os.environ.get('IS_STREAMLIT_CLOUD', False)
+        
+        if platform == "myntra" and is_cloud:
+            # Skip the standard approach for Myntra in cloud environments
+            # and go directly to the alternative approach
+            return myntra_cloud_safe_scrape(scraper, product_id)
+        
+        # Standard approach for other platforms or local environment
         data = scraper.get_product_details(str(product_id))
         
         if not data:
@@ -370,9 +378,8 @@ def safe_scrape(scraper, product_id, platform):
                     'Pragma': 'no-cache'
                 })
                 
-                # Add cookies if missing (which might help with Myntra)
+                # Add cookies if missing
                 if platform == "myntra" and not scraper.session.cookies:
-                    # Visit homepage first to get cookies
                     try:
                         scraper.session.get('https://www.myntra.com/')
                     except:
@@ -387,12 +394,10 @@ def safe_scrape(scraper, product_id, platform):
         if data:
             # For Myntra specifically, check if the data is valid JSON
             if platform == "myntra" and isinstance(data, str):
-                # Try to parse the string as JSON
                 try:
                     import json
                     data = json.loads(data)
                 except:
-                    # If parsing fails, it's not valid JSON
                     return None
             
             # Extract product information
@@ -400,60 +405,87 @@ def safe_scrape(scraper, product_id, platform):
             
             # If extraction failed but we have data, try fallback extraction
             if not product_info and platform == "myntra":
-                # Try to extract with a simpler approach for Myntra
                 product_info = fallback_myntra_extract(data)
             
             return product_info
+        
+        # If we get here and it's Myntra, try the alternative method
+        if platform == "myntra":
+            return myntra_cloud_safe_scrape(scraper, product_id)
         
         return None
     except Exception as e:
         st.warning(f"Error while scraping {platform} product {product_id}: {str(e)}")
         
-        # If it's a JSON decode error for Myntra, try a different method
-        if platform == "myntra" and "Expecting value" in str(e):
-            try:
-                # Try using requests directly with a fresh session
-                import requests
-                import json
-                import random
-                import time
-                
-                session = requests.Session()
-                session.headers = {
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-                    "Accept": "application/json",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Referer": "https://www.myntra.com/",
-                    "sec-ch-ua": '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
-                    "sec-ch-ua-mobile": "?0",
-                    "sec-ch-ua-platform": '"macOS"'
-                }
-                
-                # First, visit homepage to get cookies
-                session.get("https://www.myntra.com/")
-                
-                # Add delay to mimic human behavior
-                time.sleep(1 + random.random())
-                
-                # Then try to get product
-                api_url = f"https://www.myntra.com/gateway/v2/product/{product_id}"
-                response = session.get(api_url)
-                
-                if response.status_code == 200:
-                    try:
-                        data = response.json()
-                        # Try to use the regular extract function
-                        product_info = scraper.extract_product_info(data)
-                        if not product_info:
-                            product_info = fallback_myntra_extract(data)
-                        return product_info
-                    except:
-                        pass
-            except Exception as inner_e:
-                st.warning(f"Alternative scraping method also failed: {str(inner_e)}")
+        # If it's Myntra, try the alternative method
+        if platform == "myntra":
+            return myntra_cloud_safe_scrape(scraper, product_id)
         
         return None
 
+def myntra_cloud_safe_scrape(scraper, product_id):
+    """Alternative scraping method optimized for cloud environments"""
+    try:
+        import requests
+        import json
+        import random
+        import time
+        
+        # Use a completely fresh session
+        session = requests.Session()
+        session.headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.myntra.com/",
+            "sec-ch-ua": '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"macOS"'
+        }
+        
+        # First, visit homepage to get cookies
+        try:
+            session.get("https://www.myntra.com/", timeout=10)
+            # Add delay to mimic human behavior
+            time.sleep(1 + random.random())
+        except:
+            pass
+        
+        # Then try to get product, with multiple retries
+        for attempt in range(3):
+            try:
+                api_url = f"https://www.myntra.com/gateway/v2/product/{product_id}"
+                response = session.get(api_url, timeout=15)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    # Try to use the regular extract function
+                    product_info = scraper.extract_product_info(data)
+                    if not product_info:
+                        product_info = fallback_myntra_extract(data)
+                    
+                    if product_info:
+                        return product_info
+                
+                # If unsuccessful, wait a bit and try again
+                time.sleep(2 + random.random())
+            except Exception as e:
+                st.warning(f"Alternative scraping attempt {attempt+1} failed: {str(e)}")
+                time.sleep(2 + random.random())
+        
+        # If all attempts fail, create a minimal placeholder with the ID
+        return {
+            "product_id": product_id,
+            "name": "Product information unavailable",
+            "brand": "Unknown",
+            "is_fallback": True,
+            "retrieval_failed": True
+        }
+    except Exception as e:
+        st.warning(f"Cloud-safe scraping method failed: {str(e)}")
+        return None
+    
+    
 def fallback_myntra_extract(data):
     """Fallback extraction for Myntra when normal extraction fails"""
     try:
