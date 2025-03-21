@@ -2,9 +2,7 @@ streamlit
 pandas
 requests
 beautifulsoup4
-lxml
-fake-useragent
 xlsxwriter
+python-dateutil
 uuid
-bs4
-openpyxl
+pickle5
