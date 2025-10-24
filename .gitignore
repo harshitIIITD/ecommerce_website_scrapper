@@ -1,2 +1,9 @@
 /venv
 /user
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.pkl
+*.db
+.DS_Store
